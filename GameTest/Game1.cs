@@ -9,6 +9,12 @@ using MonoGame.Extended.Graphics;
 using MonoGame.Extended.Sprites;
 using MonoGame.Extended.Tiled;
 using MonoGame.Extended.ViewportAdapters;
+using MonoGame.Extended.Entities;
+using GameTest.Entities;
+using GameTest.Components;
+using GameTest.Entities.Systems;
+using MonoGame.Extended.Entities.Systems;
+using GameTest.Entities.Components;
 
 namespace GameTest
 {
@@ -20,14 +26,32 @@ namespace GameTest
         GraphicsDeviceManager graphics;
         SpriteBatch spriteBatch;
 
-        Sprite magus;
-
+        
         private ViewportAdapter _viewportAdapter;
         private TiledMap _map;
         private TiledMapRenderer _mapRenderer;
         private Camera2D _camera;
 
+        private EntityComponentSystem _entityComponentSystem;
+        private EntityFactory _entityFactory;
+        private TiledObjectToEntityService _objectToEntityService;
+
         Vector2 position;
+
+        private static Game1 instance;
+        public static Game1 Instance
+        {
+            get
+            {
+                if (instance == null)
+                {
+                    instance = new Game1();
+                }
+                return instance;
+            }
+        }
+
+
 
         public Game1()
         {
@@ -51,6 +75,10 @@ namespace GameTest
             _mapRenderer = new TiledMapRenderer(GraphicsDevice);
             _camera = new Camera2D(_viewportAdapter);
 
+            _entityComponentSystem = new EntityComponentSystem();
+            _entityFactory = new EntityFactory(_entityComponentSystem);
+            _objectToEntityService = new TiledObjectToEntityService(_entityFactory);
+
             position = Vector2.Zero;
             base.Initialize();
         }
@@ -63,9 +91,13 @@ namespace GameTest
         {
             spriteBatch = new SpriteBatch(GraphicsDevice);
 
-            magus = new Sprite(Content.Load<Texture2D>("magus_small"), new Vector2(512, 384));
-
             _map = Content.Load<TiledMap>("level01");
+
+            _entityComponentSystem.RegisterSystem(new CollisionSystem());
+            _entityComponentSystem.RegisterSystem(new SpriteBatchSystem(GraphicsDevice, _camera));
+            _entityComponentSystem.RegisterSystem(new PlayerMovementSystem());
+
+            _objectToEntityService.createEntities(_map.GetLayer<TiledMapObjectLayer>("entities").Objects);
         }
 
         /// <summary>
@@ -84,27 +116,11 @@ namespace GameTest
         /// <param name="gameTime">Provides a snapshot of timing values.</param>
         protected override void Update(GameTime gameTime)
         {
-            var state = Keyboard.GetState();
-
-            if (state.IsKeyDown(Keys.A))
-            {
-                position.X -= 600 * gameTime.ElapsedGameTime.Milliseconds / 1000.0f;
-            }
-            if (state.IsKeyDown(Keys.D))
-            {
-                position.X += 600 * gameTime.ElapsedGameTime.Milliseconds / 1000.0f;
-            }
-            if (state.IsKeyDown(Keys.S))
-            {
-                position.Y += 600 * gameTime.ElapsedGameTime.Milliseconds / 1000.0f;
-            }
-            if (state.IsKeyDown(Keys.W))
-            {
-                position.Y -= 600 * gameTime.ElapsedGameTime.Milliseconds / 1000.0f;
-            }
-
-            _camera.LookAt(position);
+            _entityComponentSystem.Update(gameTime);
+            _camera.LookAt(_entityComponentSystem.GetEntity("Player").Position);
             _mapRenderer.Update(_map, gameTime);
+
+            
 
             base.Update(gameTime);
         }
@@ -117,13 +133,15 @@ namespace GameTest
         {
             GraphicsDevice.Clear(Color.CornflowerBlue);
 
-            spriteBatch.Begin();
+            spriteBatch.Begin(SpriteSortMode.Deferred, null, SamplerState.PointClamp);
 
             var viewMatrix = _camera.GetViewMatrix();
             var projectionMatrix = Matrix.CreateOrthographicOffCenter(0, GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height, 0, 0f, -1f);
-            _mapRenderer.Draw(_map, viewMatrix, projectionMatrix, null);
 
-            magus.draw(spriteBatch);
+            
+            _mapRenderer.Draw(_map, viewMatrix, projectionMatrix, null);
+            _entityComponentSystem.Draw(gameTime);
+
 
             spriteBatch.End();
             base.Draw(gameTime);
